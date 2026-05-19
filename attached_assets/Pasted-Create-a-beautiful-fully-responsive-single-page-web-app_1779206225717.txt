@@ -1,0 +1,31 @@
+Create a beautiful, fully responsive single-page web application for a "Brawl Stars Ranked Draft Picker Tool" using HTML, Tailwind CSS for styling, and vanilla JavaScript. 
+
+The UI should look like a premium gaming dashboard with a dark-mode theme (deep blues, dark grays, and neon accents like amber/gold for highlights).
+
+Core Features & Layout:
+1. HEADER & SETUP AREA:
+- A clean dropdown menu to select a Map (include choices like: "Shooting Star - Open/Long Range", "Snake Prairie - Heavy Bush/Close Range", "Split - Wall Heavy/Lanes", "Safe Zone - High DPS/Base Race").
+- A section to type or select up to 4 global "Banned Brawlers". Once banned, their icons fade out and they cannot be picked.
+
+2. THE DRAFT TRACKER (Center Stage):
+- Display the standard Brawl Stars Ranked sequence dynamically in a visual timeline:
+  * Phase 1: Blue Team Pick 1
+  * Phase 2: Red Team Pick 1 & 2
+  * Phase 3: Blue Team Pick 2 & 3
+  * Phase 4: Red Team Pick 3
+- Clearly highlight whose turn it currently is with a glowing outline (Blue Team vs Red Team color coding).
+
+3. THE RECOMMENDATION PANEL:
+- Based on the selected map and current phase, dynamically display the "Top 3 Recommended Brawlers" for the active team using sleek card layouts. 
+- Each card should show the Brawler's name, their role class (e.g., Marksman, Assassin, Tank, Artillery), and a short badge text explaining *why* they are recommended (e.g., "+40 Map Synergy", "Counters enemy Edgar").
+
+4. THE SELECTION GRID:
+- Below the tracker, show a clean grid of available Brawlers (include 15-20 popular meta ones like Piper, Colt, Edgar, Mortis, Rico, Spike, Dynamike, Leon, Buzz, Frank, Gene, etc.).
+- Clicking a Brawler in this grid locks them into the *current active draft phase slot*, updates the draft state, and advances the tracker to the next phase, instantly recalculating the next set of recommendations.
+- Include a "Reset Draft" button to start over completely.
+
+Under the Hood JavaScript Logic:
+- Map a small dataset for each Brawler including their ideal map archetypes (Open, Bushy, Walls, DPS) and 2-3 Brawlers they counter.
+- Recommendations must prioritize map synergy first. If the enemy team has locked a Brawler, elevate any available counters to the top of the recommendation list. Ensure a Brawler cannot be picked twice.
+
+Make the interface look completely polished, interactive, and gaming-centric with smooth hover effects on the Brawler cards.
