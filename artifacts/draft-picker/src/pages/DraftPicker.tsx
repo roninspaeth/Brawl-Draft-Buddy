@@ -201,6 +201,51 @@ function scoreBrawler(
   return { score: Math.max(0, Math.min(100, Math.round(score))), reasons };
 }
 
+// ── Ban suggestion scoring (no team context — pure map strength) ───────────────
+function computeBanSuggestions(
+  map: GameMap,
+  banned: string[],
+): Array<{ name: string; score: number; reasons: string[]; role: string; range: string }> {
+  const bannedSet = new Set(banned);
+  return Object.entries(BRAWLERS)
+    .filter(([name]) => !bannedSet.has(name))
+    .map(([name, b]) => {
+      let score = 0;
+      const reasons: string[] = [];
+
+      if (map.strongRoles.includes(b.role as any)) {
+        score += 35;
+        reasons.push(`${b.role} excels on this map`);
+      }
+
+      const isOpen = map.tags.includes("open");
+      const isBusy = map.tags.includes("closed") || map.tags.includes("bush-heavy");
+      if (b.range === "Long" && isOpen)       { score += 20; reasons.push("Long range on open terrain"); }
+      else if (b.range === "Short" && isBusy) { score += 20; reasons.push("Thrives in tight spaces"); }
+      else if (b.range === "Medium")          { score += 10; }
+
+      const tagMatches = b.mapTags.filter(t => map.tags.includes(t as any)).length;
+      if (tagMatches >= 2) { score += 15; reasons.push("Ideal terrain fit"); }
+      else if (tagMatches === 1) { score += 8; reasons.push("Good terrain fit"); }
+
+      const specialtyTag = MODE_SPECIALTY[map.mode];
+      if (specialtyTag && b.specialtyTags?.includes(specialtyTag)) {
+        score += 18;
+        reasons.push(SPECIALTY_LABEL[specialtyTag]);
+      }
+
+      return {
+        name,
+        score: Math.min(100, Math.round(score)),
+        reasons,
+        role: b.role,
+        range: b.range,
+      };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 6);
+}
+
 // ── All roles for filter ───────────────────────────────────────────────────────
 const ALL_ROLES = [
   "Tank", "Assassin", "Marksman", "Support",
@@ -244,6 +289,12 @@ export default function DraftPicker() {
       else                             { setPhase("complete"); }
     }
   };
+
+  // Ban suggestions
+  const banSuggestions = useMemo(() => {
+    if (phase !== "banning" || !mapData) return [];
+    return computeBanSuggestions(mapData, banned);
+  }, [phase, mapData, banned]);
 
   // Filtered brawler list
   const filteredBrawlers = useMemo(() => {
@@ -397,6 +448,83 @@ export default function DraftPicker() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── Ban suggestions ── */}
+        {phase === "banning" && banSuggestions.length > 0 && (
+          <div className="bg-card border border-border/50 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.8)]" />
+                  Priority Bans
+                </h3>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  Strongest brawlers on <span className="text-foreground font-semibold">{mapData?.name}</span> — click to ban
+                </p>
+              </div>
+              <span className="text-[10px] text-muted-foreground border border-border/40 rounded px-2 py-0.5">
+                {mapData?.mode}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+              {banSuggestions.map((sug, idx) => {
+                const isBanned = banned.includes(sug.name);
+                const canBan   = !isBanned && banned.length < 6;
+                return (
+                  <motion.button
+                    key={sug.name}
+                    whileHover={canBan ? { scale: 1.04 } : {}}
+                    whileTap={canBan ? { scale: 0.96 } : {}}
+                    onClick={() => {
+                      if (isBanned) setBanned(banned.filter(b => b !== sug.name));
+                      else if (banned.length < 6) setBanned([...banned, sug.name]);
+                    }}
+                    className={`relative flex flex-col gap-1.5 p-2.5 rounded-lg border text-left transition-all duration-150 ${
+                      isBanned
+                        ? "border-rose-500/60 bg-rose-950/40 opacity-70"
+                        : idx === 0
+                          ? "border-rose-500/40 bg-rose-950/20 hover:bg-rose-950/30 cursor-pointer"
+                          : "border-border/40 bg-background hover:border-rose-800/50 hover:bg-rose-950/10 cursor-pointer"
+                    } ${!canBan && !isBanned ? "opacity-50 cursor-not-allowed" : ""}`}
+                  >
+                    {idx === 0 && !isBanned && (
+                      <span className="absolute top-1.5 right-1.5 text-[8px] font-black uppercase tracking-widest text-rose-400 bg-rose-950/60 border border-rose-800/50 px-1 rounded">
+                        #1
+                      </span>
+                    )}
+                    <div className="flex items-center gap-1.5">
+                      <div className={`p-1 rounded border flex-shrink-0 ${getRoleBg(sug.role)}`}>
+                        <RoleIcon role={sug.role} className="w-3 h-3" />
+                      </div>
+                      <span className="font-bold text-xs leading-tight truncate">{sug.name}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-1">
+                      <span className={`text-[9px] font-bold px-1 py-0.5 rounded border ${getRangeBadge(sug.range)}`}>
+                        {sug.range}
+                      </span>
+                      <span className="text-[10px] font-black text-rose-400">{sug.score}</span>
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      {sug.reasons.slice(0, 2).map((r, i) => (
+                        <span key={i} className="text-[9px] text-muted-foreground leading-tight truncate">
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                    {isBanned && (
+                      <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-rose-950/60 z-10">
+                        <span className="text-rose-400 text-[10px] font-black uppercase tracking-widest rotate-[-10deg] border border-rose-500/50 px-2 py-0.5 rounded bg-background/80">
+                          Banned ✕
+                        </span>
+                      </div>
+                    )}
+                  </motion.button>
+                );
+              })}
+            </div>
           </div>
         )}
 
