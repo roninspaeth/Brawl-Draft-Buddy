@@ -23,6 +23,16 @@ const DRAFT_ORDER = [
   { team: "Red",  pick: 3 },
 ] as const;
 
+// ── Ban order (alternating, 3 bans per team) ────────────────────────────────
+const BAN_ORDER = [
+  { team: "Blue", ban: 1 },
+  { team: "Red",  ban: 1 },
+  { team: "Blue", ban: 2 },
+  { team: "Red",  ban: 2 },
+  { team: "Blue", ban: 3 },
+  { team: "Red",  ban: 3 },
+] as const;
+
 type Phase = "setup" | "banning" | "drafting" | "complete";
 
 // ── Role visual helpers ────────────────────────────────────────────────────────
@@ -256,7 +266,10 @@ const ALL_ROLES = [
 export default function DraftPicker() {
   const [phase, setPhase]             = useState<Phase>("setup");
   const [selectedMap, setSelectedMap] = useState<string | null>(null);
-  const [banned, setBanned]           = useState<string[]>([]);
+  const [blueBans, setBlueBans]       = useState<string[]>([]);
+  const [redBans, setRedBans]         = useState<string[]>([]);
+  const [banStep, setBanStep]         = useState(0);
+  const [myTeam, setMyTeam]           = useState<"Blue" | "Red">("Blue");
   const [bluePicks, setBluePicks]     = useState<string[]>([]);
   const [redPicks, setRedPicks]       = useState<string[]>([]);
   const [currentStep, setCurrentStep] = useState(0);
@@ -265,11 +278,22 @@ export default function DraftPicker() {
 
   const mapData    = MAPS.find(m => m.name === selectedMap) ?? null;
   const activeTeam = phase === "drafting" ? DRAFT_ORDER[currentStep]?.team : null;
+  const banned     = [...blueBans, ...redBans];
+
+  // Returns the brawler name for a given ban slot index
+  const getBanSlotBrawler = (slotIndex: number): string | undefined => {
+    const slot = BAN_ORDER[slotIndex];
+    const teamBans = slot.team === "Blue" ? blueBans : redBans;
+    const nthTeamSlot = BAN_ORDER.slice(0, slotIndex).filter(s => s.team === slot.team).length;
+    return teamBans[nthTeamSlot];
+  };
 
   const handleReset = () => {
     setPhase("setup");
     setSelectedMap(null);
-    setBanned([]);
+    setBlueBans([]);
+    setRedBans([]);
+    setBanStep(0);
     setBluePicks([]);
     setRedPicks([]);
     setCurrentStep(0);
@@ -277,10 +301,27 @@ export default function DraftPicker() {
     setRoleFilter(null);
   };
 
+  // Revert all bans from slotIndex onward
+  const handleBanSlotClick = (slotIndex: number) => {
+    if (slotIndex >= banStep) return;
+    let blueCount = 0, redCount = 0;
+    for (let i = 0; i < slotIndex; i++) {
+      if (BAN_ORDER[i].team === "Blue") blueCount++;
+      else redCount++;
+    }
+    setBlueBans(blueBans.slice(0, blueCount));
+    setRedBans(redBans.slice(0, redCount));
+    setBanStep(slotIndex);
+  };
+
   const handleBrawlerClick = (name: string) => {
     if (phase === "banning") {
-      if (banned.includes(name))       { setBanned(banned.filter(b => b !== name)); return; }
-      if (banned.length < 6)           { setBanned([...banned, name]); }
+      if (banned.includes(name)) return; // already banned
+      if (banStep >= BAN_ORDER.length) return; // all slots filled
+      const slot = BAN_ORDER[banStep];
+      if (slot.team === "Blue") setBlueBans([...blueBans, name]);
+      else                      setRedBans([...redBans, name]);
+      setBanStep(banStep + 1);
     } else if (phase === "drafting") {
       if (banned.includes(name) || bluePicks.includes(name) || redPicks.includes(name)) return;
       if (activeTeam === "Blue")       { setBluePicks([...bluePicks, name]); }
@@ -294,7 +335,7 @@ export default function DraftPicker() {
   const banSuggestions = useMemo(() => {
     if (phase !== "banning" || !mapData) return [];
     return computeBanSuggestions(mapData, banned);
-  }, [phase, mapData, banned]);
+  }, [phase, mapData, blueBans, redBans]);
 
   // Filtered brawler list
   const filteredBrawlers = useMemo(() => {
@@ -320,7 +361,7 @@ export default function DraftPicker() {
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, 3);
-  }, [phase, mapData, activeTeam, banned, bluePicks, redPicks]);
+  }, [phase, mapData, activeTeam, blueBans, redBans, bluePicks, redPicks]);
 
   // Win analysis
   const winAnalysis = useMemo(() => {
@@ -378,8 +419,33 @@ export default function DraftPicker() {
             </div>
           )}
 
+          {/* My team toggle */}
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wider hidden sm:block">You:</span>
+            <button
+              onClick={() => setMyTeam("Blue")}
+              className={`text-[10px] font-bold px-2 py-1 rounded border transition-colors ${
+                myTeam === "Blue"
+                  ? "bg-blue-900/40 border-blue-500/60 text-blue-400"
+                  : "border-border/40 text-muted-foreground hover:border-border"
+              }`}
+            >
+              🔵 1st Pick
+            </button>
+            <button
+              onClick={() => setMyTeam("Red")}
+              className={`text-[10px] font-bold px-2 py-1 rounded border transition-colors ${
+                myTeam === "Red"
+                  ? "bg-red-900/40 border-red-500/60 text-red-400"
+                  : "border-border/40 text-muted-foreground hover:border-border"
+              }`}
+            >
+              🔴 2nd Pick
+            </button>
+          </div>
+
           {/* Action buttons */}
-          <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
+          <div className="flex items-center gap-2 flex-shrink-0">
             {phase === "setup" && (
               <Button
                 onClick={() => { if (selectedMap) setPhase("banning"); }}
@@ -418,12 +484,25 @@ export default function DraftPicker() {
 
         {/* ── Ban phase ── */}
         {phase === "banning" && (
-          <div className="bg-rose-950/20 border border-rose-900/40 rounded-xl p-4">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="bg-background border border-border/50 rounded-xl p-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
               <div>
-                <h2 className="text-base font-bold text-rose-400">Ban Phase</h2>
-                <p className="text-sm text-muted-foreground">
-                  Click brawlers to ban them ({banned.length}/6) — click again to un-ban
+                <h2 className="text-base font-bold flex items-center gap-2">
+                  <span className="text-rose-400">Ban Phase</span>
+                  <span className="text-[10px] font-normal text-muted-foreground border border-border/40 rounded px-1.5 py-0.5">
+                    {banStep}/6
+                  </span>
+                </h2>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {banStep < BAN_ORDER.length
+                    ? <>
+                        <span className={BAN_ORDER[banStep].team === "Blue" ? "text-blue-400 font-semibold" : "text-rose-400 font-semibold"}>
+                          {BAN_ORDER[banStep].team === myTeam ? "Your" : "Opponent's"}
+                        </span>
+                        {" ban — click a brawler below"}
+                      </>
+                    : "All bans placed — ready to draft"
+                  }
                 </p>
               </div>
               <Button
@@ -434,20 +513,62 @@ export default function DraftPicker() {
                 {banned.length > 0 ? `Confirm ${banned.length} Ban${banned.length > 1 ? "s" : ""} & Draft` : "Skip Bans"}
               </Button>
             </div>
-            {banned.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {banned.map(b => (
+
+            {/* Ban timeline */}
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+              {BAN_ORDER.map((slot, i) => {
+                const isBlueSlot  = slot.team === "Blue";
+                const isFilled    = i < banStep;
+                const isActive    = i === banStep;
+                const brawlerName = getBanSlotBrawler(i);
+                const isMySlot    = slot.team === myTeam;
+
+                return (
                   <button
-                    key={b}
-                    onClick={() => setBanned(banned.filter(x => x !== b))}
-                    className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded border border-rose-800/50 bg-rose-950/40 text-rose-400 hover:bg-rose-900/40 transition-colors"
+                    key={i}
+                    onClick={() => isFilled ? handleBanSlotClick(i) : undefined}
+                    className={`relative flex flex-col items-center gap-1 p-2 rounded-lg border text-center transition-all min-h-[80px] justify-center ${
+                      isActive
+                        ? isBlueSlot
+                          ? "border-blue-500/70 bg-blue-950/25 shadow-[0_0_10px_rgba(59,130,246,0.15)]"
+                          : "border-rose-500/70 bg-rose-950/25 shadow-[0_0_10px_rgba(244,63,94,0.15)]"
+                        : isFilled
+                          ? isBlueSlot
+                            ? "border-blue-800/50 bg-blue-950/15 hover:border-blue-600/70 cursor-pointer"
+                            : "border-rose-800/50 bg-rose-950/15 hover:border-rose-600/70 cursor-pointer"
+                          : "border-border/25 bg-background/30 cursor-default opacity-40"
+                    }`}
                   >
-                    <span>{b}</span>
-                    <span className="text-rose-600">✕</span>
+                    <div className={`text-[9px] font-black uppercase tracking-widest mb-0.5 ${
+                      isBlueSlot ? "text-blue-400" : "text-rose-400"
+                    }`}>
+                      {isBlueSlot ? "🔵" : "🔴"} {slot.team}{isMySlot ? " (You)" : ""}
+                    </div>
+
+                    {isFilled && brawlerName ? (
+                      <>
+                        <div className={`p-1 rounded border ${
+                          isBlueSlot ? "border-blue-700/40 bg-blue-950/40" : "border-rose-700/40 bg-rose-950/40"
+                        }`}>
+                          <RoleIcon
+                            role={BRAWLERS[brawlerName]?.role ?? ""}
+                            className={`w-3.5 h-3.5 ${isBlueSlot ? "text-blue-400" : "text-rose-400"}`}
+                          />
+                        </div>
+                        <span className={`text-[10px] font-bold truncate w-full leading-tight ${
+                          isBlueSlot ? "text-blue-300" : "text-rose-300"
+                        }`}>{brawlerName}</span>
+                        <span className="text-[8px] text-muted-foreground/60 leading-none">tap to undo</span>
+                      </>
+                    ) : isActive ? (
+                      <span className="text-[9px] text-muted-foreground animate-pulse">Banning…</span>
+                    ) : (
+                      <span className="text-[9px] text-muted-foreground/50 italic">—</span>
+                    )}
                   </button>
-                ))}
-              </div>
-            )}
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -590,7 +711,10 @@ export default function DraftPicker() {
                   : "bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.8)]"
               }`} />
               <span className="uppercase tracking-wider">
-                Top Picks for <span className={activeTeam === "Blue" ? "text-blue-400" : "text-red-400"}>{activeTeam}</span>
+                Top Picks for{" "}
+                <span className={activeTeam === "Blue" ? "text-blue-400" : "text-red-400"}>
+                  {activeTeam === myTeam ? "You" : "Opponent"}
+                </span>
               </span>
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -700,29 +824,35 @@ export default function DraftPicker() {
             {/* Grid */}
             <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12 gap-1.5">
               {filteredBrawlers.map(([name, data]) => {
-                const isBanned   = banned.includes(name);
-                const isBlue     = bluePicks.includes(name);
-                const isRed      = redPicks.includes(name);
-                const unavail    = isBanned || isBlue || isRed;
+                const isBlueBanned  = blueBans.includes(name);
+                const isRedBanned   = redBans.includes(name);
+                const isBanned      = isBlueBanned || isRedBanned;
+                const isBlue        = bluePicks.includes(name);
+                const isRed         = redPicks.includes(name);
+                const unavail       = isBanned || isBlue || isRed;
                 const isRecommended = recommendations.some(r => r.name === name);
+                // During ban phase: dim already-banned; can't re-ban
+                const banPhaseClickable = phase === "banning" && !isBanned && banStep < BAN_ORDER.length;
 
                 return (
                   <motion.button
                     key={name}
-                    whileHover={!unavail ? { scale: 1.06 } : {}}
-                    whileTap={!unavail ? { scale: 0.94 } : {}}
+                    whileHover={(!unavail && (phase === "drafting" || banPhaseClickable)) ? { scale: 1.06 } : {}}
+                    whileTap={(!unavail && (phase === "drafting" || banPhaseClickable)) ? { scale: 0.94 } : {}}
                     onClick={() => handleBrawlerClick(name)}
-                    disabled={unavail && phase === "drafting"}
+                    disabled={(unavail && phase === "drafting") || (isBanned && phase === "banning")}
                     className={`relative p-2 rounded-lg border text-center flex flex-col items-center gap-1 overflow-hidden transition-all duration-150 ${
-                      isBanned
-                        ? "border-rose-900/30 bg-rose-950/10 opacity-40 cursor-not-allowed"
-                        : isBlue
-                          ? "border-blue-700/50 bg-blue-900/20 opacity-50 cursor-not-allowed"
-                          : isRed
-                            ? "border-red-700/50 bg-red-900/20 opacity-50 cursor-not-allowed"
-                            : isRecommended && phase === "drafting"
-                              ? "border-primary/60 bg-primary/5 hover:bg-primary/10 cursor-pointer"
-                              : "border-border/40 bg-background hover:border-border hover:bg-card cursor-pointer"
+                      isBlueBanned
+                        ? "border-blue-900/30 bg-blue-950/10 opacity-40 cursor-not-allowed"
+                        : isRedBanned
+                          ? "border-rose-900/30 bg-rose-950/10 opacity-40 cursor-not-allowed"
+                          : isBlue
+                            ? "border-blue-700/50 bg-blue-900/20 opacity-50 cursor-not-allowed"
+                            : isRed
+                              ? "border-red-700/50 bg-red-900/20 opacity-50 cursor-not-allowed"
+                              : isRecommended && phase === "drafting"
+                                ? "border-primary/60 bg-primary/5 hover:bg-primary/10 cursor-pointer"
+                                : "border-border/40 bg-background hover:border-border hover:bg-card cursor-pointer"
                     }`}
                   >
                     <RoleIcon role={data.role} className={`w-4 h-4 ${getRoleColor(data.role)}`} />
@@ -731,10 +861,17 @@ export default function DraftPicker() {
                       {data.range[0]}
                     </span>
 
-                    {isBanned && (
+                    {isBlueBanned && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-blue-950/50 z-10">
+                        <span className="text-blue-400 font-black text-[9px] uppercase tracking-widest rotate-[-15deg] border border-blue-500 px-1 rounded bg-background/80">
+                          🔵 Ban
+                        </span>
+                      </div>
+                    )}
+                    {isRedBanned && (
                       <div className="absolute inset-0 flex items-center justify-center bg-rose-950/50 z-10">
-                        <span className="text-rose-500 font-black text-[9px] uppercase tracking-widest rotate-[-15deg] border border-rose-500 px-1 rounded bg-background/80">
-                          Banned
+                        <span className="text-rose-400 font-black text-[9px] uppercase tracking-widest rotate-[-15deg] border border-rose-500 px-1 rounded bg-background/80">
+                          🔴 Ban
                         </span>
                       </div>
                     )}
