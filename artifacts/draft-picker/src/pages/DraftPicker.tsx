@@ -593,16 +593,13 @@ export default function DraftPicker() {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
               {banSuggestions.map((sug, idx) => {
                 const isBanned = banned.includes(sug.name);
-                const canBan   = !isBanned && banned.length < 6;
+                const canBan   = !isBanned && banStep < BAN_ORDER.length;
                 return (
                   <motion.button
                     key={sug.name}
                     whileHover={canBan ? { scale: 1.04 } : {}}
                     whileTap={canBan ? { scale: 0.96 } : {}}
-                    onClick={() => {
-                      if (isBanned) setBanned(banned.filter(b => b !== sug.name));
-                      else if (banned.length < 6) setBanned([...banned, sug.name]);
-                    }}
+                    onClick={() => { if (canBan) handleBrawlerClick(sug.name); }}
                     className={`relative flex flex-col gap-1.5 p-2.5 rounded-lg border text-left transition-all duration-150 ${
                       isBanned
                         ? "border-rose-500/60 bg-rose-950/40 opacity-70"
