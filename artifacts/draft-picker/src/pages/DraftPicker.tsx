@@ -9,7 +9,7 @@ import {
   SelectLabel, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { BRAWLERS } from "@/data/brawlers";
+import { BRAWLERS, MODE_SPECIALTY, SPECIALTY_LABEL } from "@/data/brawlers";
 import { MAPS, MODES } from "@/data/maps";
 import type { GameMap } from "@/data/maps";
 
@@ -184,7 +184,14 @@ function scoreBrawler(
     if (ed.counters.includes(name))   { score -= 25; reasons.push(`Weak to ${enemy}`); }
   }
 
-  // 5. Team role diversity
+  // 5. Mode-specific specialty bonus
+  const specialtyTag = MODE_SPECIALTY[map.mode];
+  if (specialtyTag && b.specialtyTags?.includes(specialtyTag)) {
+    score += 18;
+    reasons.push(`${SPECIALTY_LABEL[specialtyTag]} on ${map.mode}`);
+  }
+
+  // 6. Team role diversity
   const myRoles = myPicks.map(p => BRAWLERS[p]?.role).filter(Boolean);
   if (myPicks.length > 0 && !myRoles.includes(b.role)) {
     score += 10;
